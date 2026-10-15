@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_entry_form.html" import entry_fields %}
+{% block title %}Log work · Work Tracker{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Log work</h1>
+
+<div class="card mb-4"><div class="card-body">
+  <form hx-post="/entries" hx-target="#entries-list" hx-swap="innerHTML" hx-disabled-elt="find button[type=submit]"
+        hx-on::after-request="if (event.detail.successful) { this.querySelector('[name=description]').value=''; this.querySelector('[name=impact_note]').value=''; }">
+    <input type="hidden" name="month" value="{{ month }}">
+    <div id="form-error"></div>
+    {{ entry_fields(None, 'new', today, projects) }}
+    <button type="submit" class="btn btn-primary mt-3"><i class="bi bi-plus-lg"></i> Add entry</button>
+  </form>
+</div></div>
+
+<div id="entries-list">{% include "_entries_list.html" %}</div>
+{% endblock %}

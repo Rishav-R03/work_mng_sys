@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Work Tracker{% endblock %}
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-7 col-lg-5 text-center">
+    <h1 class="display-6 fw-semibold mb-2"><i class="bi bi-clock-history"></i> Work Tracker</h1>
+    <p class="text-body-secondary mb-4">Log your hours, overtime and wins. Pull in your GitHub commits as evidence.
+      Turn it into a report for your manager or a resume-ready summary.</p>
+    {% if configured %}
+      <a href="/auth/github" class="btn btn-dark btn-lg w-100"><i class="bi bi-github"></i> Sign in with GitHub</a>
+    {% else %}
+      <div class="alert alert-warning text-start">GitHub OAuth isn't configured. Set <code>GITHUB_CLIENT_ID</code> and <code>GITHUB_CLIENT_SECRET</code>.</div>
+    {% endif %}
+    {% if dev_login %}<a href="/dev-login" class="btn btn-outline-secondary w-100 mt-2">Demo login (local only)</a>{% endif %}
+  </div>
+</div>
+{% endblock %}

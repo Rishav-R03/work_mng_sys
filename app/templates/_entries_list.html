@@ -1,0 +1,51 @@
+{% if oob %}
+<div id="form-error" hx-swap-oob="true">{% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}</div>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <div class="btn-group btn-group-sm">
+    <a class="btn btn-outline-secondary" href="/entries?month={{ prev_month }}"><i class="bi bi-chevron-left"></i></a>
+    <a class="btn btn-outline-secondary disabled">{{ month_label }}</a>
+    <a class="btn btn-outline-secondary" href="/entries?month={{ next_month }}"><i class="bi bi-chevron-right"></i></a>
+  </div>
+  <div class="small text-body-secondary">
+    Total <strong>{{ month_total | hm }}</strong>
+    {% if month_overtime %}· overtime <strong class="text-warning-emphasis">{{ month_overtime | hm }}</strong>{% endif %}
+  </div>
+</div>
+
+{% for d in days %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <strong>{{ d.date.strftime('%a %d %b') }}</strong>
+    <span class="small">
+      {% if d.commits %}<span class="badge text-bg-success" title="GitHub commits that day"><i class="bi bi-git"></i> {{ d.commits }}</span>{% endif %}
+      {% if d.prs %}<span class="badge text-bg-info" title="PRs merged that day"><i class="bi bi-sign-merge-right"></i> {{ d.prs }}</span>{% endif %}
+      {{ d.total | hm }}
+      {% if d.overtime %}<span class="badge text-bg-warning">+{{ d.overtime | hm }} overtime</span>{% endif %}
+    </span>
+  </div>
+  <div class="list-group list-group-flush">
+    {% for e in d.entries %}
+    <div class="entry-item list-group-item" id="entry-{{ e.id }}">
+      <div class="d-flex justify-content-between gap-3">
+        <div>
+          <span class="fw-semibold">{{ e.project.name if e.project else 'Unassigned' }}</span>
+          <span class="text-body-secondary small">
+            · {{ e.duration_minutes | hm }}{% if e.start_time %} ({{ e.start_time.strftime('%H:%M') }}–{{ e.end_time.strftime('%H:%M') }}){% endif %}
+          </span>
+          {% for t in e.tag_list %}<span class="badge text-bg-light border">{{ t }}</span> {% endfor %}
+          {% if e.description %}<div class="small">{{ e.description }}</div>{% endif %}
+          {% if e.impact_note %}<div class="small text-success-emphasis"><i class="bi bi-trophy"></i> {{ e.impact_note }}</div>{% endif %}
+        </div>
+        <div class="text-nowrap no-print">
+          <button class="btn btn-sm btn-link" hx-get="/entries/{{ e.id }}/edit?month={{ month }}" hx-target="#entry-{{ e.id }}" hx-swap="outerHTML" title="Edit"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-link text-danger" hx-delete="/entries/{{ e.id }}?month={{ month }}" hx-target="#entries-list" hx-swap="innerHTML" hx-confirm="Delete this entry?" title="Delete"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<p class="text-body-secondary">Nothing logged in {{ month_label }} yet.</p>
+{% endfor %}

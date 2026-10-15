@@ -1,0 +1,16 @@
+.chart-box { position: relative; height: 280px; }
+.kpi-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--bs-secondary-color); }
+.kpi-value { font-size: 1.9rem; font-weight: 600; line-height: 1.2; }
+.kpi-sub { font-size: .8rem; color: var(--bs-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.story-card { border-left: 4px solid #4c78a8; }
+.report h1 { font-size: 1.6rem; }
+.report h2 { font-size: 1.15rem; margin-top: 1.5rem; border-bottom: 1px solid var(--bs-border-color); padding-bottom: .25rem; }
+.report h3 { font-size: 1rem; margin-top: 1rem; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-block; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .card { border: 0 !important; }
+}

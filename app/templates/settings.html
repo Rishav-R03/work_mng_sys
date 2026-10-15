@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Settings · Work Tracker{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Settings</h1>
+<div class="row g-3">
+  <div class="col-md-6"><div class="card"><div class="card-body">
+    <form method="post" action="/settings">
+      <div class="mb-3">
+        <label class="form-label">Contracted hours per day</label>
+        <input type="number" step="0.25" min="0.25" max="24" name="contracted_hours" class="form-control" value="{{ '%g' % user.contracted_hours }}" required>
+        <div class="form-text">Any day above this counts as overtime.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Timezone</label>
+        <input type="text" name="timezone" class="form-control" value="{{ user.timezone }}" placeholder="Asia/Kolkata">
+        <div class="form-text">IANA name. Used to put GitHub commits on the right calendar day.</div>
+      </div>
+      <button class="btn btn-primary">Save</button>
+    </form>
+  </div></div></div>
+  <div class="col-md-6"><div class="card"><div class="card-body">
+    <h2 class="h6">Your data</h2>
+    <p class="small text-body-secondary">Everything stays exportable, so you're never locked in.</p>
+    <a class="btn btn-outline-secondary btn-sm" href="/export/entries.csv"><i class="bi bi-filetype-csv"></i> Download all entries (CSV)</a>
+    <p class="small text-body-secondary mt-3 mb-0">Tip: keep descriptions free of confidential employer details, since reports may be shared outside your company.</p>
+  </div></div></div>
+</div>
+{% endblock %}

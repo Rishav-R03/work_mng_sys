@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Work Tracker{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">{{ label }}</h1>
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <div class="btn-group btn-group-sm" role="group">
+      {% for k, name in ranges %}
+        <a href="/dashboard?range={{ k }}" class="btn btn-outline-primary {{ 'active' if k == range_key }}">{{ name }}</a>
+      {% endfor %}
+    </div>
+    <button class="btn btn-sm btn-dark" hx-post="/github/sync" hx-indicator="#sync-spin" hx-disabled-elt="this">
+      <i class="bi bi-github"></i> Sync GitHub
+      <span id="sync-spin" class="spinner-border spinner-border-sm htmx-indicator" role="status"></span>
+    </button>
+  </div>
+</div>
+<div class="small text-body-secondary mb-3">
+  {% if user.last_synced_at %}GitHub last synced {{ user.last_synced_at.strftime('%d %b %H:%M') }} UTC.{% else %}GitHub not synced yet. The first sync pulls the last 12 months and can take a minute.{% endif %}
+</div>
+
+<div class="card story-card mb-4"><div class="card-body">
+  <div class="text-uppercase small fw-semibold text-body-secondary mb-1">The story so far</div>
+  <p class="mb-0 fs-5">{{ story }}</p>
+  {% if not s.entries %}<a href="/entries" class="btn btn-primary btn-sm mt-3">Log your first entry</a>{% endif %}
+</div></div>
+
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-4">
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">Hours logged</div><div class="kpi-value">{{ s.total_min | hrs }}</div>
+    <div class="kpi-sub">{% if delta is not none %}<span class="{{ 'text-success' if delta >= 0 else 'text-danger' }}">{{ '+' if delta >= 0 }}{{ delta }}%</span> vs previous{% else %}of {{ s.expected_min | hrs }} scheduled{% endif %}</div>
+  </div></div></div>
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">Overtime</div><div class="kpi-value text-warning-emphasis">{{ s.overtime_min | hrs }}</div>
+    <div class="kpi-sub">{{ s.overtime_days | length }} day{{ '' if s.overtime_days|length == 1 else 's' }} over {{ '%g' % user.contracted_hours }}h</div>
+  </div></div></div>
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">Days worked</div><div class="kpi-value">{{ s.days_worked }}</div>
+    <div class="kpi-sub">avg {{ s.avg_min | hrs }} h/day</div>
+  </div></div></div>
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">Projects</div><div class="kpi-value">{{ s.projects | length }}</div>
+    <div class="kpi-sub">{% if s.projects %}top: {{ s.projects[0][0] }}{% else %}&nbsp;{% endif %}</div>
+  </div></div></div>
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">Commits</div><div class="kpi-value">{{ s.commit_count }}</div>
+    <div class="kpi-sub">{{ s.repos | length }} repos</div>
+  </div></div></div>
+  <div class="col"><div class="card kpi h-100"><div class="card-body">
+    <div class="kpi-label">PRs merged</div><div class="kpi-value">{{ s.pr_count }}</div>
+    <div class="kpi-sub">&nbsp;</div>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-8"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Hours {{ 'per week' if charts.weekly else 'per day' }} <span class="text-body-secondary fw-normal">· overtime in orange</span></h2>
+    <div class="chart-box"><canvas id="hoursChart"></canvas></div>
+  </div></div></div>
+  <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Where the time went</h2>
+    <div class="chart-box"><canvas id="projectChart"></canvas></div>
+  </div></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-lg-8"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Hours vs GitHub activity <span class="text-body-secondary fw-normal">· proof the hours produced output</span></h2>
+    <div class="chart-box"><canvas id="activityChart"></canvas></div>
+  </div></div></div>
+  <div class="col-lg-4"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Hours by weekday</h2>
+    <div class="chart-box"><canvas id="weekdayChart"></canvas></div>
+  </div></div></div>
+</div>
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Recent wins</h2>
+    {% if s.wins %}<ul class="list-unstyled mb-0">
+      {% for w in s.wins[:6] %}<li class="mb-2"><span class="badge text-bg-secondary">{{ w.project }}</span> <span class="small text-body-secondary">{{ w.date.strftime('%d %b') }}</span><br>{{ w.note }}</li>{% endfor %}
+    </ul>{% else %}<p class="text-body-secondary mb-0">Add an "impact" note when logging work. Those become your report highlights.</p>{% endif %}
+  </div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">Most active repos</h2>
+    {% if s.repos %}<ul class="list-group list-group-flush">
+      {% for repo, n in s.repos %}<li class="list-group-item d-flex justify-content-between px-0"><span>{{ repo }}</span><span class="text-body-secondary">{{ n }}</span></li>{% endfor %}
+    </ul>{% else %}<p class="text-body-secondary mb-0">Sync GitHub to see commits and merged PRs here.</p>{% endif %}
+  </div></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const D = {{ charts | tojson }};
+  const C = { regular: '#4c78a8', overtime: '#f58518', commits: '#54a24b', prs: '#b279a2' };
+  const PALETTE = ['#4c78a8', '#f58518', '#54a24b', '#b279a2', '#e45756', '#72b7b2', '#eeca3b', '#9d755d', '#bab0ac'];
+  const style = getComputedStyle(document.body);
+  Chart.defaults.color = style.color;
+  Chart.defaults.borderColor = 'rgba(128,128,128,.2)';
+  Chart.defaults.font.family = style.fontFamily;
+  const opts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, ...extra });
+
+  new Chart(document.getElementById('hoursChart'), {
+    type: 'bar',
+    data: { labels: D.labels, datasets: [
+      { label: 'Regular h', data: D.regular, backgroundColor: C.regular, stack: 's' },
+      { label: 'Overtime h', data: D.overtime, backgroundColor: C.overtime, stack: 's' } ] },
+    options: opts({ scales: { x: { stacked: true, ticks: { maxTicksLimit: 12 } }, y: { stacked: true, beginAtZero: true } } })
+  });
+
+  new Chart(document.getElementById('projectChart'), {
+    type: 'doughnut',
+    data: { labels: D.project_labels, datasets: [{ data: D.project_hours, backgroundColor: PALETTE, borderWidth: 0 }] },
+    options: opts({ plugins: { legend: { position: 'bottom' } } })
+  });
+
+  new Chart(document.getElementById('activityChart'), {
+    data: { labels: D.labels, datasets: [
+      { type: 'bar', label: 'Hours', data: D.regular.map((v, i) => +(v + D.overtime[i]).toFixed(1)), backgroundColor: C.regular + '99', yAxisID: 'y' },
+      { type: 'line', label: 'Commits', data: D.commits, borderColor: C.commits, backgroundColor: C.commits, tension: .3, pointRadius: 2, yAxisID: 'y1' },
+      { type: 'line', label: 'PRs merged', data: D.prs, borderColor: C.prs, backgroundColor: C.prs, tension: .3, pointRadius: 2, yAxisID: 'y1' } ] },
+    options: opts({ scales: { x: { ticks: { maxTicksLimit: 12 } }, y: { beginAtZero: true, title: { display: true, text: 'Hours' } },
+      y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'GitHub' } } } })
+  });
+
+  new Chart(document.getElementById('weekdayChart'), {
+    type: 'bar',
+    data: { labels: D.weekday_labels, datasets: [{ label: 'Hours', data: D.weekday_hours,
+      backgroundColor: D.weekday_labels.map((_, i) => i >= 5 ? C.overtime : C.regular) }] },
+    options: opts({ plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } })
+  });
+</script>
+{% endblock %}

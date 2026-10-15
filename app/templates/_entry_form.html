@@ -1,0 +1,48 @@
+{# Shared fields for creating and editing an entry. `e` is None when creating. #}
+{% macro entry_fields(e, uid, default_date, projects) %}
+{% set mode = 'duration' if (e and not e.start_time) else 'range' %}
+{% set brk = ((e.end_time.hour*60 + e.end_time.minute - e.start_time.hour*60 - e.start_time.minute) % 1440 - e.duration_minutes) if (e and e.start_time) else '' %}
+<div class="entry-form">
+  <div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3">
+      <label class="form-label small mb-1">Date</label>
+      <input type="date" name="date" class="form-control" required value="{{ e.date if e else default_date }}">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small mb-1">Enter time as</label><br>
+      <div class="btn-group btn-group-sm" role="group">
+        <input type="radio" class="btn-check" name="mode" id="m-range-{{ uid }}" value="range" {{ 'checked' if mode == 'range' }}>
+        <label class="btn btn-outline-secondary" for="m-range-{{ uid }}">Start–end</label>
+        <input type="radio" class="btn-check" name="mode" id="m-dur-{{ uid }}" value="duration" {{ 'checked' if mode == 'duration' }}>
+        <label class="btn btn-outline-secondary" for="m-dur-{{ uid }}">Duration</label>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 mode-range {{ 'd-none' if mode == 'duration' }}">
+      <div class="row g-2">
+        <div class="col-4"><label class="form-label small mb-1">Start</label>
+          <input type="time" name="start_time" class="form-control" value="{{ e.start_time.strftime('%H:%M') if e and e.start_time else '' }}"></div>
+        <div class="col-4"><label class="form-label small mb-1">End</label>
+          <input type="time" name="end_time" class="form-control" value="{{ e.end_time.strftime('%H:%M') if e and e.end_time else '' }}"></div>
+        <div class="col-4"><label class="form-label small mb-1">Break (min)</label>
+          <input type="number" min="0" name="break_min" class="form-control" value="{{ brk if brk else '' }}"></div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6 mode-duration {{ 'd-none' if mode == 'range' }}">
+      <label class="form-label small mb-1">Duration</label>
+      <input type="text" name="duration" class="form-control" placeholder="1.5 · 1:30 · 90m · 2h 15m"
+             value="{{ (e.duration_minutes // 60) ~ ':' ~ '%02d' % (e.duration_minutes % 60) if e and not e.start_time else '' }}">
+    </div>
+  </div>
+  <div class="row g-2 mt-1">
+    <div class="col-md-4"><label class="form-label small mb-1">Project</label>
+      <input type="text" name="project" class="form-control" list="projects-{{ uid }}" placeholder="e.g. Payments API" value="{{ e.project.name if e and e.project else '' }}">
+      <datalist id="projects-{{ uid }}">{% for p in projects %}<option value="{{ p }}">{% endfor %}</datalist></div>
+    <div class="col-md-8"><label class="form-label small mb-1">Tags</label>
+      <input type="text" name="tags" class="form-control" placeholder="python, postgres, code-review" value="{{ e.tags.replace(',', ', ') if e else '' }}"></div>
+    <div class="col-12"><label class="form-label small mb-1">What did you work on?</label>
+      <textarea name="description" rows="2" class="form-control">{{ e.description if e else '' }}</textarea></div>
+    <div class="col-12"><label class="form-label small mb-1">Impact / win <span class="text-body-secondary">(optional, becomes a report highlight)</span></label>
+      <input type="text" name="impact_note" class="form-control" placeholder="Cut report generation time from 40s to 6s" value="{{ e.impact_note if e else '' }}"></div>
+  </div>
+</div>
+{% endmacro %}
