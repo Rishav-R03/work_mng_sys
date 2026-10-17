@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          if [ -f requirements-dev.txt ]; then
+            python -m pip install -r requirements-dev.txt
+          fi
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+          python -m pip install pytest pytest-cov httpx
+
+      - name: Run backend tests
+        run: python -m pytest tests/backend --cov=app --cov-report=term-missing
+
+  frontend:
+    name: Frontend Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect frontend package
+        id: frontend
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node
+        if: steps.frontend.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        if: steps.frontend.outputs.present == 'true'
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run frontend lint
+        if: steps.frontend.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "No npm lint script found; skipping."
+          fi
+
+      - name: Run frontend tests
+        if: steps.frontend.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.test ? 0 : 1)"; then
+            npm run test
+          else
+            echo "No npm test script found; skipping."
+          fi
+
+      - name: Build frontend
+        if: steps.frontend.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "const s=require('./package.json').scripts||{}; process.exit(s.build ? 0 : 1)"; then
+            npm run build
+          else
+            echo "No npm build script found; skipping."
+          fi
+
+  e2e:
+    name: End-To-End Tests
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect e2e script
+        id: e2e
+        shell: bash
+        run: |
+          if [ -f package.json ] && node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e'] ? 0 : 1)"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node
+        if: steps.e2e.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        if: steps.e2e.outputs.present == 'true'
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Install Playwright browsers
+        if: steps.e2e.outputs.present == 'true'
+        run: npx playwright install --with-deps
+
+      - name: Run end-to-end tests
+        if: steps.e2e.outputs.present == 'true'
+        run: npm run test:e2e
+
+      - name: Skip e2e
+        if: steps.e2e.outputs.present != 'true'
+        run: echo "No test:e2e npm script found; skipping end-to-end tests."

@@ -42,7 +42,51 @@ async def github_login(request: Request):
 
 @router.get("/auth/callback")
 async def github_callback(request: Request, db: Session = Depends(get_db)):
-    token = await oauth.github.authorize_access_token(request)
+    import logging
+
+    from authlib.integrations.base_client.errors import MismatchingStateError
+    from fastapi import HTTPException
+
+    logger = logging.getLogger(__name__)
+    session_keys = sorted(request.session.keys()) if hasattr(request, "session") else []
+    callback_context = {
+        "has_code": bool(request.query_params.get("code")),
+        "has_state": bool(request.query_params.get("state")),
+        "session_keys": session_keys,
+    }
+
+    try:
+        token = await oauth.github.authorize_access_token(request)
+    except MismatchingStateError as exc:
+        logger.warning(
+            "GitHub OAuth callback rejected because state did not match. "
+            "This usually means the callback session cookie was missing, expired, "
+            "or the login was started in a different browser/session. context=%s",
+            callback_context,
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "GitHub login could not be completed because the OAuth state did "
+                "not match. Please start the login flow again."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "GitHub OAuth callback failed during token exchange. "
+            "error_type=%s context=%s",
+            type(exc).__name__,
+            callback_context,
+            exc_info=exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "GitHub login failed while exchanging the OAuth callback for an "
+                "access token. Please try again."
+            ),
+        ) from exc
     profile = (await oauth.github.get("user", token=token)).json()
     login = profile["login"]
 
