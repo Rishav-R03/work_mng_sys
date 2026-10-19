@@ -20,6 +20,9 @@ BASE_URL = (os.getenv("BASE_URL") or os.getenv("APP_BASE_URL") or "http://localh
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 GITHUB_SCOPE = os.getenv("GITHUB_SCOPE", "read:user repo")
-ALLOWED_GITHUB_LOGIN = os.getenv("ALLOWED_GITHUB_LOGIN", "").strip().lower()
+# Comma-separated GitHub usernames allowed to sign in. Empty = anyone may sign in (each sees only their own data).
+ALLOWED_GITHUB_LOGINS = {
+    x.strip().lower() for x in os.getenv("ALLOWED_GITHUB_LOGIN", "").split(",") if x.strip()
+}
 DEV_LOGIN = os.getenv("DEV_LOGIN", "0") == "1"
 HTTPS = BASE_URL.startswith("https://")

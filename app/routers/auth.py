@@ -90,7 +90,7 @@ async def github_callback(request: Request, db: Session = Depends(get_db)):
     profile = (await oauth.github.get("user", token=token)).json()
     login = profile["login"]
 
-    if config.ALLOWED_GITHUB_LOGIN and login.lower() != config.ALLOWED_GITHUB_LOGIN:
+    if config.ALLOWED_GITHUB_LOGINS and login.lower() not in config.ALLOWED_GITHUB_LOGINS:
         raise HTTPException(403, "This tracker is private to its owner.")
 
     user = db.scalar(select(User).where(User.github_id == profile["id"]))
