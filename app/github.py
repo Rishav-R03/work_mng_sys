@@ -13,10 +13,16 @@ from .security import decrypt
 
 API = "https://api.github.com"
 INITIAL_DAYS = 365
+SPACING = 2.2  # seconds between requests: search allows ~30/min, and bursts trip the secondary limit
+BUDGET = 80  # seconds per sync; Render drops requests that run past ~100s
 
 
 class SyncError(Exception):
     pass
+
+
+class OutOfBudget(Exception):
+    """Out of time, or GitHub told us to wait longer than we can. Progress so far is kept."""
 
 
 def _month_windows(since: dt.date, until: dt.date):
@@ -29,37 +35,64 @@ def _month_windows(since: dt.date, until: dt.date):
         start = nxt
 
 
-def _get(client: httpx.Client, path: str, params: dict) -> dict:
-    for attempt in range(2):
-        r = client.get(f"{API}{path}", params=params)
-        if r.status_code == 403 and r.headers.get("X-RateLimit-Remaining") == "0" and attempt == 0:
-            reset = int(r.headers.get("X-RateLimit-Reset", "0"))
-            time.sleep(min(max(reset - time.time(), 1), 65))
-            continue
-        if r.status_code == 401:
-            raise SyncError("GitHub rejected the stored token. Sign out and sign in again.")
-        if r.status_code >= 400:
-            raise SyncError(f"GitHub API error {r.status_code}: {r.text[:200]}")
-        return r.json()
-    raise SyncError("GitHub rate limit hit. Try again in a minute.")
+def _limit_wait(r: httpx.Response) -> float | None:
+    """Seconds GitHub wants us to wait if this response is a rate limit, else None."""
+    if "retry-after" in r.headers:
+        return int(r.headers["retry-after"]) + 1
+    if r.headers.get("X-RateLimit-Remaining") == "0":
+        return max(int(r.headers.get("X-RateLimit-Reset", "0")) - time.time(), 1) + 1
+    if "rate limit" in r.text.lower():
+        return 60  # secondary limit without a hint: GitHub advises waiting at least a minute
+    return None
 
 
-def _search(client: httpx.Client, path: str, query: str, sort: str):
-    page = 1
-    while page <= 10:
-        data = _get(client, path, {"q": query, "per_page": 100, "page": page, "sort": sort})
-        items = data.get("items", [])
-        yield from items
-        if len(items) < 100:
-            return
-        page += 1
+class _Github:
+    def __init__(self, client: httpx.Client, deadline: float):
+        self.client, self.deadline, self._last = client, deadline, 0.0
+
+    def get(self, path: str, params: dict) -> dict:
+        for attempt in range(3):
+            gap = SPACING - (time.monotonic() - self._last)
+            if gap > 0:
+                time.sleep(gap)
+            self._last = time.monotonic()
+            r = self.client.get(f"{API}{path}", params=params)
+            if r.status_code == 401:
+                raise SyncError("GitHub rejected the stored token. Sign out and sign in again.")
+            if r.status_code in (403, 429) and (wait := _limit_wait(r)) is not None:
+                if attempt == 2 or time.monotonic() + wait > self.deadline:
+                    raise OutOfBudget()
+                time.sleep(wait)
+                continue
+            if r.status_code >= 400:
+                raise SyncError(f"GitHub API error {r.status_code}: {r.text[:200]}")
+            return r.json()
+        raise OutOfBudget()
+
+    def search(self, path: str, query: str, sort: str):
+        for page in range(1, 11):
+            items = self.get(path, {"q": query, "per_page": 100, "page": page, "sort": sort}).get("items", [])
+            yield from items
+            if len(items) < 100:
+                return
 
 
 def _parse_ts(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(dt.timezone.utc).replace(tzinfo=None)
 
 
+def _store(db: Session, user: User, rows: list[tuple], existing: set, new: dict) -> None:
+    for kind, ext_id, repo, title, url, when in rows:
+        if (kind, ext_id) in existing:
+            continue
+        existing.add((kind, ext_id))
+        db.add(Activity(user_id=user.id, kind=kind, ext_id=ext_id, repo=repo, title=title, url=url, occurred_at=when))
+        new[kind] += 1
+
+
 def sync_user(db: Session, user: User) -> dict:
+    """Returns {"commit": n, "pr": n, "partial": bool}. Progress is saved after every step, so a
+    partial sync (rate limit or time budget) is resumed by simply syncing again."""
     try:
         token = decrypt(user.token_enc)
     except (InvalidToken, ValueError):
@@ -76,34 +109,38 @@ def sync_user(db: Session, user: User) -> dict:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    found: list[tuple[str, str, str, str, str, dt.datetime]] = []  # kind, ext_id, repo, title, url, when
-    with httpx.Client(timeout=30, headers=headers) as client:
-        for w_start, w_end in _month_windows(since, today):
-            span = f"{w_start}..{w_end}"
-            for it in _search(client, "/search/commits", f"author:{user.login} author-date:{span}", "author-date"):
-                found.append((
-                    "commit",
-                    it["sha"],
-                    it["repository"]["full_name"],
-                    it["commit"]["message"].split("\n")[0][:300],
-                    it["html_url"],
-                    _parse_ts(it["commit"]["author"]["date"]),
-                ))
-            for it in _search(client, "/search/issues", f"author:{user.login} type:pr is:merged merged:{span}", "updated"):
-                merged = (it.get("pull_request") or {}).get("merged_at") or it.get("closed_at")
-                if not merged:
-                    continue
-                repo = "/".join(it["repository_url"].split("/")[-2:])
-                found.append(("pr", f"{repo}#{it['number']}", repo, it["title"][:300], it["html_url"], _parse_ts(merged)))
-
     existing = set(db.execute(select(Activity.kind, Activity.ext_id).where(Activity.user_id == user.id)).all())
-    new = {"commit": 0, "pr": 0}
-    for kind, ext_id, repo, title, url, when in found:
-        if (kind, ext_id) in existing:
-            continue
-        existing.add((kind, ext_id))
-        db.add(Activity(user_id=user.id, kind=kind, ext_id=ext_id, repo=repo, title=title, url=url, occurred_at=when))
-        new[kind] += 1
-    user.last_synced_at = dt.datetime.utcnow()
-    db.commit()
+    new = {"commit": 0, "pr": 0, "partial": False}
+
+    with httpx.Client(timeout=30, headers=headers) as client:
+        gh = _Github(client, time.monotonic() + BUDGET)
+        try:
+            prs = []
+            for it in gh.search("/search/issues", f"author:{user.login} type:pr is:merged merged:{since}..{today}", "updated"):
+                merged = (it.get("pull_request") or {}).get("merged_at") or it.get("closed_at")
+                if merged:
+                    repo = "/".join(it["repository_url"].split("/")[-2:])
+                    prs.append(("pr", f"{repo}#{it['number']}", repo, it["title"][:300], it["html_url"], _parse_ts(merged)))
+            _store(db, user, prs, existing, new)
+            db.commit()
+
+            for w_start, w_end in _month_windows(since, today):
+                commits = [
+                    (
+                        "commit", it["sha"], it["repository"]["full_name"],
+                        it["commit"]["message"].split("\n")[0][:300], it["html_url"],
+                        _parse_ts(it["commit"]["author"]["date"]),
+                    )
+                    for it in gh.search("/search/commits", f"author:{user.login} author-date:{w_start}..{w_end}", "author-date")
+                ]
+                _store(db, user, commits, existing, new)
+                # Window finished: remember how far we got so a retry resumes here.
+                user.last_synced_at = (
+                    dt.datetime.utcnow() if w_end >= today
+                    else dt.datetime.combine(w_end, dt.time.max)
+                )
+                db.commit()
+        except OutOfBudget:
+            db.commit()
+            new["partial"] = True
     return new

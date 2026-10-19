@@ -56,7 +56,10 @@ def dashboard(
 def github_sync(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     try:
         new = sync_user(db, user)
-        request.session["flash"] = f"GitHub synced: {new['commit']} new commits, {new['pr']} new merged PRs."
+        msg = f"GitHub synced: {new['commit']} new commits, {new['pr']} new merged PRs."
+        if new["partial"]:
+            msg += " Not finished (GitHub is throttling requests). Wait a minute, then click Sync again to continue."
+        request.session["flash"] = msg
     except SyncError as e:
         request.session["flash"] = f"Sync failed: {e}"
     return Response(status_code=204, headers={"HX-Refresh": "true"})
